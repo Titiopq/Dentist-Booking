@@ -1,149 +1,128 @@
 const Appointment = require('../models/Appointment');
-const Hospital = require('../models/Hospital');
+const Dentist = require('../models/Dentist');
 
-//desc      Get all appointments
-//route     GET /api/v1/appointments
-//access    Private
-exports.getAppointments= async (req,res,next)=>{
-    let query;
+const appointmentPopulation = [
+    { path: 'dentist', select: 'name yearsOfExperience areaOfExpertise' },
+    { path: 'user', select: 'name email telephone' }
+];
 
-    if(req.user.role !== 'admin'){
-        query=Appointment.find({user:req.user.id}).populate({
-            path:'hospital',
-            select:'name province tel'
-        });
-    }else{ 
-        if(req.params.hospitalId){
-            console.log(req.params.hospitalId);
-            query=Appointment.find({hospital:req.params.hospitalId}).populate({
-                path:'hospital',
-                select:'name province tel'
-            });
-        }else{
-            query=Appointment.find().populate({
-                path:'hospital',
-                select:'name province tel'
-            });
-        }
+// A registered user sees only their own booking. Admins can see every booking.
+exports.getAppointments = async (req, res) => {
+    try {
+        const filter = req.user.role === 'admin' ? {} : { user: req.user.id };
+        const appointments = await Appointment.find(filter).populate(appointmentPopulation).sort('apptDate');
+        res.status(200).json({ success: true, count: appointments.length, data: appointments });
+    } catch (err) {
+        res.status(500).json({ success: false, error: 'Cannot find appointments' });
     }
-    
-    try{
-        const appointments=await query;
+};
 
-        res.status(200).json({
-            success:true,
-            count:appointments.length,
-            data:appointments
-        });
-    } catch(err){
-        console.log(err.stack);
-        return res.status(500).json({success:false, message:"Cannot find appointments"}); 
-    }
-}
-
-//desc      Get single appointment
-//route     GET /api/v1/appointments/:id
-//access    Public
-exports.getAppointment= async (req,res,next)=>{
-    try{
-        const appointment = await Appointment.findById(req.params.id).populate({
-            path:'hospital',
-            select:'name description tel'
-        });
-
+// A booking can be viewed by its owner or by an admin.
+exports.getAppointment = async (req, res) => {
+    try {
+        const appointment = await Appointment.findById(req.params.id).populate(appointmentPopulation);
         if (!appointment) {
-            return res.status(404).json({success:false, message:`No appointment with the id of ${req.params.id}`});
+            return res.status(404).json({ success: false, error: 'Appointment not found' });
         }
-
-        res.status(200).json({success:true, data:appointment});
-    } catch(err){
-        console.log(err.stack);
-        return res.status(500).json({success:false, message:"Cannot find appointment"}); 
+        if (req.user.role !== 'admin' && appointment.user._id.toString() !== req.user.id) {
+            return res.status(403).json({ success: false, error: 'You cannot view this appointment' });
+        }
+        res.status(200).json({ success: true, data: appointment });
+    } catch (err) {
+        res.status(400).json({ success: false, error: 'Invalid appointment id' });
     }
-}
+};
 
-//desc      Add appointment
-//route     POST /api/v1/hospitals/:hospitalId/appointments
-//access    Private
-exports.addAppointment= async (req,res,next)=>{
-    try{
-        req.body.hospital=req.params.hospitalId;
-        
-        const hospital = await Hospital.findById(req.params.hospitalId);
-        
-        if (!hospital) {
-            return res.status(404).json({success:false, message:`No hospital with the id of ${req.params.hospitalId}`});
+// Each registered user may have one booking. The unique model index also
+// protects this rule when two booking requests arrive at the same time.
+exports.addAppointment = async (req, res) => {
+    try {
+        const { apptDate, date, dentist: bodyDentist } = req.body;
+        const bookingDate = apptDate || date;
+        const dentistId = req.params.dentistId || bodyDentist;
+        if (!bookingDate || !dentistId || Number.isNaN(Date.parse(bookingDate))) {
+            return res.status(400).json({ success: false, error: 'Please provide a valid date and dentist' });
         }
 
-        req.body.user=req.user.id;
-
-        const existedAppointments = await Appointment.find({user:req.user.id});
-        if(existedAppointments.length >= 3 && req.user.role !== 'admin'){
-            return res.status(400).json({success:false, message:`User with ID ${req.user.id} has already made 3 appointments`});
+        const dentist = await Dentist.findById(dentistId);
+        if (!dentist) {
+            return res.status(404).json({ success: false, error: 'Dentist not found' });
         }
 
-        const appointment = await Appointment.create(req.body);
-
-        res.status(201).json({
-            success:true, 
-            data:appointment
+        const appointment = await Appointment.create({
+            apptDate: new Date(bookingDate),
+            dentist: dentist._id,
+            user: req.user.id
         });
-    } catch(err){
-        console.log(err.stack);
-        return res.status(500).json({success:false, message:"Cannot create appointment"}); 
-    }
-}
-
-//desc      Update appointment
-//route     PUT /api/v1/appointments/:id
-//access    Private
-exports.updateAppointment= async (req,res,next)=>{
-    try{
-        let appointment = await Appointment.findById(req.params.id);
-
-        if (!appointment) {
-            return res.status(404).json({success:false, message:`No appointment with the id of ${req.params.id}`});
+        await appointment.populate(appointmentPopulation);
+        res.status(201).json({ success: true, data: appointment });
+    } catch (err) {
+        if (err.code === 11000) {
+            return res.status(409).json({ success: false, error: 'You already have a booking' });
         }
-
-        if(appointment.user.toString() !== req.user.id && req.user.role !== 'admin'){
-            return res.status(401).json({success:false, message:`User ${req.user.id} is not authorized to update this appointment`});
+        if (err.name === 'CastError') {
+            return res.status(400).json({ success: false, error: 'Invalid dentist id' });
         }
-
-        appointment = await Appointment.findByIdAndUpdate(req.params.id, req.body, {
-            new:true,
-            runValidators:true
-        }).populate({
-            path:'hospital',
-            select:'name description tel'
-        });
-
-        res.status(200).json({success:true, data:appointment});
-    } catch(err){
-        console.log(err.stack);
-        return res.status(500).json({success:false, message:"Cannot update appointment"}); 
+        res.status(400).json({ success: false, error: err.message || 'Cannot create appointment' });
     }
-}
+};
 
-//desc      Delete appointment
-//route     DELETE /api/v1/appointments/:id
-//access    Private
-exports.deleteAppointment= async (req,res,next)=>{
-    try{
+// Users can edit their own booking; admins can edit any booking.
+exports.updateAppointment = async (req, res) => {
+    try {
         const appointment = await Appointment.findById(req.params.id);
-
         if (!appointment) {
-            return res.status(404).json({success:false, message:`No appointment with the id of ${req.params.id}`});
+            return res.status(404).json({ success: false, error: 'Appointment not found' });
+        }
+        if (req.user.role !== 'admin' && appointment.user.toString() !== req.user.id) {
+            return res.status(403).json({ success: false, error: 'You cannot edit this appointment' });
         }
 
-        if(appointment.user.toString() !== req.user.id && req.user.role !== 'admin'){
-            return res.status(401).json({success:false, message:`User ${req.user.id} is not authorized to delete this appointment`});
+        const updates = {};
+        const requestedDate = req.body.apptDate || req.body.date;
+        if (requestedDate !== undefined) {
+            if (Number.isNaN(Date.parse(requestedDate))) {
+                return res.status(400).json({ success: false, error: 'Please provide a valid date' });
+            }
+            updates.apptDate = new Date(requestedDate);
+        }
+        if (req.body.dentist !== undefined || req.body.dentistId !== undefined) {
+            const dentistId = req.body.dentistId || req.body.dentist;
+            const dentist = await Dentist.findById(dentistId);
+            if (!dentist) {
+                return res.status(404).json({ success: false, error: 'Dentist not found' });
+            }
+            updates.dentist = dentist._id;
+        }
+        if (Object.keys(updates).length === 0) {
+            return res.status(400).json({ success: false, error: 'Provide a date or dentist to update' });
         }
 
-        await appointment.deleteOne({_id:req.params.id});
-
-        res.status(200).json({success:true, data: {}});
-    } catch(err){
-        console.log(err.stack);
-        return res.status(500).json({success:false, message:"Cannot delete appointment"}); 
+        const updated = await Appointment.findByIdAndUpdate(req.params.id, updates, {
+            new: true,
+            runValidators: true
+        }).populate(appointmentPopulation);
+        res.status(200).json({ success: true, data: updated });
+    } catch (err) {
+        if (err.code === 11000) {
+            return res.status(409).json({ success: false, error: 'This user already has a booking' });
+        }
+        res.status(400).json({ success: false, error: 'Cannot update appointment' });
     }
-}
+};
+
+exports.deleteAppointment = async (req, res) => {
+    try {
+        const appointment = await Appointment.findById(req.params.id);
+        if (!appointment) {
+            return res.status(404).json({ success: false, error: 'Appointment not found' });
+        }
+        if (req.user.role !== 'admin' && appointment.user.toString() !== req.user.id) {
+            return res.status(403).json({ success: false, error: 'You cannot delete this appointment' });
+        }
+        await appointment.deleteOne();
+        res.status(200).json({ success: true, data: {} });
+    } catch (err) {
+        res.status(400).json({ success: false, error: 'Cannot delete appointment' });
+    }
+};

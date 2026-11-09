@@ -7,6 +7,8 @@ exports.protect=async (req, res, next)=>{
 
     if(req.headers.authorization && req.headers.authorization.startsWith('Bearer')){
         token=req.headers.authorization.split(' ')[1];
+    } else if (req.cookies && req.cookies.token) {
+        token = req.cookies.token;
     }
 
     //Make sure token exists
@@ -18,13 +20,16 @@ exports.protect=async (req, res, next)=>{
         //Verify token
         const decoded=jwt.verify(token, process.env.JWT_SECRET);
 
-        console.log(decoded);
-
-        req.user=await User.findById(decoded.id);
+        req.user=await User.findById(decoded.id).select('+tokenVersion');
+        if (!req.user) {
+            return res.status(401).json({success:false, error:'Not authorized to access this route'});
+        }
+        if (decoded.tokenVersion !== req.user.tokenVersion) {
+            return res.status(401).json({success:false, error:'Not authorized to access this route'});
+        }
 
         next();
     } catch(err){
-        console.log(err.stack);
         return res.status(401).json({success:false, error:'Not authorized to access this route'});
     }
 }

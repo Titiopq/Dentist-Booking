@@ -6,20 +6,23 @@ const User = require('../models/User');
 
 exports.register=async (req, res, next)=>{
     try{
-        const {name, email, password, role}=req.body;
+        const {name, telephone, email, password}=req.body;
+        if (!name || !telephone || !email || !password) {
+            return res.status(400).json({success:false, error:'Please provide name, telephone, email, and password'});
+        }
 
         //Create user
         const user=await User.create({
-            name, 
+            name,
+            telephone,
             email,
-            password, 
-            role
+            password
         });
 
         sendTokenResponse(user, 201, res);
     } catch(err){
-        res.status(400).json({success:false}); 
-        console.log(err.stack);
+        const status = err.code === 11000 ? 409 : 400;
+        res.status(status).json({success:false, error:err.message});
     }
 }
 
@@ -37,7 +40,8 @@ exports.login=async (req, res, next)=>{
     }
 
     //Check for user
-    const user=await User.findOne({email}).select('+password');
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const user=await User.findOne({email:normalizedEmail}).select('+password +tokenVersion');
 
     if(!user){
         return res.status(400).json({success:false, error:'Invalid credentials'});
@@ -61,14 +65,17 @@ exports.login=async (req, res, next)=>{
 //@route GET /api/v1/auth/logout
 //@access Private
 exports.logout=async(req,res,next)=>{
-    res.cookie('token','none',{
-        expires: new Date(Date.now()+ 10*1000),
-        httpOnly:true
-    });
-        res.status(200).json({
-        success:true,
-        data:{}
-    });
+    try {
+        await User.updateOne({ _id: req.user.id }, { $inc: { tokenVersion: 1 } });
+        res.clearCookie('token', {
+            httpOnly:true,
+            secure:process.env.NODE_ENV === 'production',
+            sameSite:'lax'
+        });
+        res.status(200).json({ success:true, data:{} });
+    } catch (err) {
+        res.status(500).json({ success:false, error:'Cannot log out' });
+    }
 };
 
 //Get token from model, create cookie and send response
@@ -78,7 +85,8 @@ const sendTokenResponse=(user, statusCode, res)=>{
 
     const options={
         expires: new Date(Date.now() + process.env.JWT_COOKIE_EXPIRE * 24 * 60 * 60 * 1000),
-        httpOnly:true
+        httpOnly:true,
+        sameSite:'lax'
     }
 
     if(process.env.NODE_ENV==='production'){
@@ -91,6 +99,8 @@ const sendTokenResponse=(user, statusCode, res)=>{
         _id:user._id,
         name: user.name,
         email:user.email,
+        telephone:user.telephone,
+        role:user.role,
         //end for frontend
         token
     })

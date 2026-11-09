@@ -5,14 +5,22 @@ const jwt = require('jsonwebtoken');
 const UserSchema = new mongoose.Schema({
     name: {
         type: String,
-        required: [true, 'Please add a name']
+        required: [true, 'Please add a name'],
+        trim: true
+    },
+    telephone: {
+        type: String,
+        required: [true, 'Please add a telephone number'],
+        trim: true
     },
     email: {
         type: String,
         required: [true, 'Please add an email'],
         unique: true,
+        lowercase: true,
+        trim: true,
         match: [
-        /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
+        /^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/,
         'Please add a valid email'
         ]
     },
@@ -20,6 +28,11 @@ const UserSchema = new mongoose.Schema({
         type: String,
         enum: ['user', 'admin'],
         default: 'user'
+    },
+    tokenVersion: {
+        type: Number,
+        default: 0,
+        select: false
     },
     password: {
         type: String,
@@ -36,14 +49,15 @@ const UserSchema = new mongoose.Schema({
 });
 
 // Encrypt password using bcrypt
-UserSchema.pre('save',async function(next){
-    const salt=await bcrypt.genSalt(10);
-    this.password=await bcrypt.hash(this.password, salt);
+UserSchema.pre('save', async function(){
+    if (!this.isModified('password')) return;
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
 });
 
 //Sign JWT and return
 UserSchema.methods.getSignedJwtToken=function(){
-    return jwt.sign({id:this._id}, process.env.JWT_SECRET, {
+    return jwt.sign({id:this._id, tokenVersion:this.tokenVersion}, process.env.JWT_SECRET, {
         expiresIn: process.env.JWT_EXPIRE
     });
 }
