@@ -1,0 +1,91 @@
+@startuml class-diagram
+left to right direction
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+skinparam class {
+    BackgroundColor<<Application>> #FFF2CC
+    BorderColor<<Application>> #D6B656
+    BackgroundColor<<Resource>> #D5E8D4
+    BorderColor<<Resource>> #82B366
+    BackgroundColor<<Representation>> #D5E8D4
+    BorderColor<<Representation>> #82B366
+}
+hide circle
+hide empty members
+
+package "Dentist Booking" {
+
+    class "DentistBookingService" as App <<Application>>
+
+    ' ---------- Auth ----------
+    class "Auth" as AuthRes <<Resource>> {
+        <<POST>> + register(): User
+        <<POST>> + login(): User
+        <<GET>> + getMe(): User
+        <<GET>> + logout(): void
+    }
+
+    ' ---------- Dentists ----------
+    class "Dentists" as DentistsRes <<Resource>> {
+        <<GET>> + getDentists(): Dentist[]
+        <<POST>> + createDentist(): Dentist
+    }
+    class "Dentist" as DentistRes <<Resource>> {
+        <<GET>> + getDentist(): Dentist
+    }
+    class "DentistAppointments" as DentistApptRes <<Resource>> {
+        <<POST>> + addAppointment(): Appointment
+    }
+
+    ' ---------- Appointments ----------
+    class "Appointments" as ApptsRes <<Resource>> {
+        <<GET>> + getAppointments(): Appointment[]
+    }
+    class "Appointment" as ApptRes <<Resource>> {
+        <<GET>> + getAppointment(): Appointment
+        <<PUT>> + updateAppointment(): Appointment
+        <<DELETE>> + deleteAppointment(): void
+    }
+
+    ' ---------- Representations ----------
+    class "User" as UserRep <<Representation>> {
+        - name
+        - telephone
+        - email
+        - password
+        - role
+        - tokenVersion
+        - createdAt
+    }
+    class "Dentist" as DentistRep <<Representation>> {
+        - name
+        - yearsOfExperience
+        - areaOfExpertise
+    }
+    class "Appointment" as ApptRep <<Representation>> {
+        - apptDate
+        - user
+        - dentist
+        - createdAt
+    }
+}
+
+App ..> AuthRes : "/auth\n<<Path>>"
+App ..> DentistsRes : "/dentists\n<<Path>>"
+App ..> ApptsRes : "/appointments\n<<Path>>"
+
+DentistsRes ..> DentistRes : "/{dentistId}\n<<Path>>"
+DentistRes ..> DentistApptRes : "/appointments\n<<Path>>"
+ApptsRes ..> ApptRes : "/{appointmentId}\n<<Path>>"
+
+AuthRes ..> UserRep : <<use>>
+DentistsRes ..> DentistRep : <<use>>
+DentistRes ..> DentistRep : <<use>>
+DentistApptRes ..> ApptRep : <<use>>
+ApptsRes ..> ApptRep : <<use>>
+ApptRes ..> ApptRep : <<use>>
+
+ApptRep --> "1" UserRep : user
+ApptRep --> "1" DentistRep : dentist
+
+@enduml

@@ -1,0 +1,57 @@
+@startuml use-case-diagram
+top to bottom direction
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam usecase {
+    BackgroundColor #D5E8D4
+    BorderColor #82B366
+}
+skinparam usecase<<Admin>> {
+    BackgroundColor #DAE8FC
+    BorderColor #6C8EBF
+}
+
+title Dentist Booking - Use Case Diagram
+
+actor "User" as guest
+actor "Registered User" as user
+actor "Admin" as admin
+
+rectangle "Dentist Booking System" {
+    usecase "Register\n(name, telephone,\nemail, password)" as UC1
+    usecase "Log in\n(email, password)" as UC2
+    usecase "Log out" as UC3
+    usecase "View Dentist List\n(name, years of experience,\narea of expertise)" as UC4
+
+    usecase "Create Booking\n(date, dentist)\nONE booking only" as UC5
+    usecase "View Own Booking" as UC6
+    usecase "Edit Own Booking" as UC7
+    usecase "Delete Own Booking" as UC8
+
+    usecase "View Any Booking" <<Admin>> as UC9
+    usecase "Edit Any Booking" <<Admin>> as UC10
+    usecase "Delete Any Booking" <<Admin>> as UC11
+}
+
+guest -- UC1
+
+user -- UC2
+user -- UC3
+user -- UC4
+user -- UC5
+user -- UC6
+user -- UC7
+user -- UC8
+
+UC2 -- admin
+UC3 -- admin
+UC9 -- admin
+UC10 -- admin
+UC11 -- admin
+
+UC5 .> UC4 : <<include>>
+UC6 -[hidden]- UC9
+UC7 -[hidden]- UC10
+UC8 -[hidden]- UC11
+
+@enduml
