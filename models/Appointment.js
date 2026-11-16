@@ -10,9 +10,9 @@ const AppointmentSchema=new mongoose.Schema({
         ref:'User',
         required:true
     },
-    hospital: {
+    dentist: {
         type: mongoose.Schema.ObjectId,
-        ref:'Hospital',
+        ref:'Dentist',
         required:true
     },
     createdAt: {
@@ -20,5 +20,8 @@ const AppointmentSchema=new mongoose.Schema({
         default: Date.now
     }
 });
+
+// Enforce the one-booking-per-user requirement at the database level too.
+AppointmentSchema.index({ user: 1 }, { unique: true });
 
 module.exports=mongoose.model('Appointment', AppointmentSchema);
